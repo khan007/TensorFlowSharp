@@ -1,100 +1,135 @@
+[![Build Status](https://travis-ci.org/migueldeicaza/TensorFlowSharp.svg?branch=master)](https://travis-ci.org/migueldeicaza/TensorFlowSharp)
+
 TensorFlowSharp are .NET bindings to the TensorFlow library published here:
 
 https://github.com/tensorflow/tensorflow
 
-This surfaces the C API as a strongly-typed C# API.
+This surfaces the C API as a strongly-typed .NET API for use from C# and F#.
 
 The API binding is pretty much done, and at this point, I am polishing the
 API to make it more pleasant to use from C# and F# and resolving some of the
 kinks and TODO-items that I left while I was doing the work.
 
-# Getting Started
+The [current API
+documentation](https://migueldeicaza.github.io/TensorFlowSharp/) is here.
 
-You need to get yourself a copy of the TensorFlow runtime, you can either
-build your own version (recommended, see the instructions below) or you can use a precompiled
-binary:
+# Using TensorFlowSharp
 
-https://storage.googleapis.com/tensorflow/libtensorflow/libtensorflow-cpu-darwin-x86_64-1.0.0-rc0.tar.gz
-https://storage.googleapis.com/tensorflow/libtensorflow/libtensorflow-gpu-darwin-x86_64-1.0.0-rc0.tar.gz
-https://storage.googleapis.com/tensorflow/libtensorflow/libtensorflow-cpu-linux-x86_64-1.0.0-rc0.tar.gz
-https://storage.googleapis.com/tensorflow/libtensorflow/libtensorflow-gpu-linux-x86_64-1.0.0-rc0.tar.gz
+## Installation 
 
-Unpack the above .tar.gz suitable for your system on a prefix that your
-system's dynamic linker can use, for example, go to `/usr/local` and unpack there.
+The easiest way to get started is to use the NuGet package for 
+TensorFlowSharp which contains both the .NET API as well as the 
+native libraries for 64-bit Linux, Mac and Windows using the CPU backend.
 
-Mac note: the package contains a `.so` file, you will need to rename this to `.dylib` for
-it to work.
+You can install using NuGet like this:
 
-Once you do that, you need to open the solution file on the top
-level directory and build.   This will produce both the TensorFlowSharp
-library as well as compile the tests and samples.
-
-It is recommended that you build your own, because these bindings of TensorFlow surface some
-features in the latest version of TensorFlow that are not available on the 1.0.0-rc0 builds above.
-
-# Work in Progress
-
-These instructions reflect what you need to get up and running with the
-current code as I am working on it.   In the long-term, we will just have
-NuGet packages that eliminate all the manual steps required here.
-
-## Building your own version
-
-You will want to install Tensorflow from sources, follow the instructions
-for your platform here:
-
-https://www.tensorflow.org/install/install_sources
-
-This includes checking out the Tensorflow sources, installing Bazel, 
-and building the core.
-
-Once you do that, you will need to build the shared library, I believe
-this is the command I used:
-
-    bazel build -c opt //tensorflow:libtensorflow.so
-
-If you want debug symbols for Tensorflow, while debugging the binding:
-
-    bazel build -c dbg --strip=never //tensorflow:libtensorflow.so
-
-You will need this library to be installed in a system accessible location
-like `/usr/local/lib`
-
-On Linux:
-
-```
-sudo cp bazel-bin/tensorflow/libtensorflow.so /usr/local/lib/
+```cmd
+nuget install TensorFlowSharp
 ```
 
-On MacOS:
+Or select it from the NuGet packages UI on Visual Studio.
+
+
+On Visual Studio, make sure that you are targeting .NET 4.6.1 or
+later, as this package uses some features of newer .NETs.  Otherwise,
+the package will not be added. Once you do this, you can just use the
+TensorFlowSharp nuget
+
+Alternatively, you can [download it](https://www.nuget.org/packages/TensorFlowSharp/) directly.
+
+## Using TensorFlowSharp
+
+Your best source of information right now are the SampleTest that
+exercises various APIs of TensorFlowSharp, or the stand-alone samples
+located in "Examples".
+
+This API binding is closer design-wise to the Java and Go bindings
+which use explicit TensorFlow graphs and sessions.  Your application
+will typically create a graph (TFGraph) and setup the operations
+there, then create a session from it (TFSession), then use the session
+runner to setup inputs and outputs and execute the pipeline.
+
+Something like this:
+
+```csharp
+using(var graph = new TFGraph ())
+{
+    graph.Import (File.ReadAllBytes ("MySavedModel"));
+    var session = new TFSession (graph);
+    var runner = session.GetRunner ();
+    runner.AddInput (graph ["input"] [0], tensor);
+    runner.Fetch (graph ["output"] [0]);
+
+    var output = runner.Run ();
+
+    // Fetch the results from output:
+    TFTensor result = output [0];
+}
+```
+
+In scenarios where you do not need to setup the graph independently,
+the session will create one for you.  The following example shows how
+to abuse TensorFlow to compute the addition of two numbers:
+
+```csharp
+using (var session = new TFSession())
+{
+    var graph = session.Graph;
+
+    var a = graph.Const(2);
+    var b = graph.Const(3);
+    Console.WriteLine("a=2 b=3");
+
+    // Add two constants
+    var addingResults = session.GetRunner().Run(graph.Add(a, b));
+    var addingResultValue = addingResults.GetValue();
+    Console.WriteLine("a+b={0}", addingResultValue);
+
+    // Multiply two constants
+    var multiplyResults = session.GetRunner().Run(graph.Mul(a, b));
+    var multiplyResultValue = multiplyResults.GetValue();
+    Console.WriteLine("a*b={0}", multiplyResultValue);
+}
+```
+
+Here is an F# scripting version of the same example, you can use this in F# Interactive:
 
 ```
-sudo cp bazel-bin/tensorflow/libtensorflow.so /usr/local/lib/libtensorflow.dylib
+#r @"packages\TensorFlowSharp.1.4.0\lib\net461\TensorFlowSharp.dll"
+
+open System
+open System.IO
+open TensorFlow
+
+// set the path to find the native DLL
+Environment.SetEnvironmentVariable("Path", 
+    Environment.GetEnvironmentVariable("Path") + ";" + __SOURCE_DIRECTORY__ + @"/packages/TensorFlowSharp.1.2.2/native")
+
+module AddTwoNumbers = 
+    let session = new TFSession()
+    let graph = session.Graph
+
+    let a = graph.Const(new TFTensor(2))
+    let b = graph.Const(new TFTensor(3))
+    Console.WriteLine("a=2 b=3")
+
+    // Add two constants
+    let addingResults = session.GetRunner().Run(graph.Add(a, b))
+    let addingResultValue = addingResults.GetValue()
+    Console.WriteLine("a+b={0}", addingResultValue)
+
+    // Multiply two constants
+    let multiplyResults = session.GetRunner().Run(graph.Mul(a, b))
+    let multiplyResultValue = multiplyResults.GetValue()
+    Console.WriteLine("a*b={0}", multiplyResultValue)
 ```
 
-## Running the test
 
-I am currently using Xamarin Studio on a Mac to do the development, but this
-should work on Windows with VS and Linux with MonoDevelop, there is nothing
-Xamarin specific here.
+# Working on TensorFlowSharp 
 
-Before the solution will run you will need the shared library generated to
-be on a location accessibly by the Mono runtime (for example /usr/local/lib).
+If you want to work on extending TensorFlowSharp or contribute to its development
+read the [CONTRIBUTING.md](CONTRIBUTING.md) file.
 
-While Tensorflow builds a library with the extension .so, you will need 
-to make sure that it has the proper name for your platform (tensorflow.dll on Windows, 
-tensorflow.dylib on Mac) and copy that there.
-
-Tensorflow is a 64-bit library, so you will need to use a 64-bit Mono to run,
-at home (where I am doing this work), I have a copy of 64-bit Mono on /mono,
-so you will want to set that in your project configuration, to do this:
-
-Open the project options (double click on the "SampleTest" project), then
-select Run/Default, go to the "Advanced" tab, and select "Execute in .NET runtime"
-and make sure that you select one that is 64-bit enabled.
-
-Open the solution file in the top directory, and when you hit run, this will
-run the API test.   
 
 ## Possible Contributions
 
@@ -113,16 +148,12 @@ https://github.com/tensorflow/models
 
 ### Packaging
 
-x86: It is not clear to me how to distribute the native libtensorflow to users, as
-it is designed to be compiled for your host system.  I would like to figure out
-how we can distribute packages that have been compiled with the optimal set of
-optimizations for users to consume.
-
 Mobile: we need to package the library for consumption on Android and iOS.
 
-### NuGet Package
+### Documentation Styling
 
-Would love to have a NuGet package for all platforms.
+The API documentation has not been styled, I am using the barebones template
+for documentation, and it can use some work.
 
 ### Issues
 
@@ -137,7 +168,7 @@ Look at:
 ./tensorflow/core/ops/nn_ops.cc for the C++ implementation with type definitions
 
 Docs on types:
-https://www.tensorflow.org/versions/r0.11/how_tos/adding_an_op/
+https://www.tensorflow.org/extend/adding_an_op
 
 ## Documentation
 
@@ -146,4 +177,4 @@ the terms of Apache 2 License, in particular all the generated documentation
 for the various operations that is generated by using the tensorflow reflection
 APIs.
 
-Last API update: 998cb32c4f69c0a71faaa8d7ca5cc5bcd48a0585
+Last API update: a4b352bfddd518b540c30e456f3bc0027ba9351f
